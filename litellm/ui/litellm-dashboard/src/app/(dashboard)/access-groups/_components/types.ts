@@ -8,6 +8,7 @@ export interface AccessGroup {
   skillNames: string[];
   keyIds: string[];
   teamIds: string[];
+  userIds: string[];
   createdAt: string;
   createdBy: string;
   updatedAt: string;

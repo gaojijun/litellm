@@ -32,6 +32,7 @@ def _make_access_group_record(
     access_skill_names: list | None = None,
     assigned_team_ids: list | None = None,
     assigned_key_ids: list | None = None,
+    assigned_user_ids: list | None = None,
     created_by: str | None = "admin-user",
     updated_by: str | None = "admin-user",
     created_at: datetime | None = None,
@@ -48,6 +49,7 @@ def _make_access_group_record(
         "access_skill_names": access_skill_names or [],
         "assigned_team_ids": assigned_team_ids or [],
         "assigned_key_ids": assigned_key_ids or [],
+        "assigned_user_ids": assigned_user_ids or [],
         "created_at": created_at_val,
         "created_by": created_by,
         "updated_at": updated_at_val,
@@ -94,6 +96,7 @@ def client_and_mocks(monkeypatch):
             access_skill_names=data.get("access_skill_names", []),
             assigned_team_ids=data.get("assigned_team_ids", []),
             assigned_key_ids=data.get("assigned_key_ids", []),
+            assigned_user_ids=data.get("assigned_user_ids", []),
             created_by=data.get("created_by"),
             updated_by=data.get("updated_by"),
         )
@@ -112,6 +115,7 @@ def client_and_mocks(monkeypatch):
             access_skill_names=data.get("access_skill_names", []),
             assigned_team_ids=data.get("assigned_team_ids", []),
             assigned_key_ids=data.get("assigned_key_ids", []),
+            assigned_user_ids=data.get("assigned_user_ids", []),
             updated_by=data.get("updated_by"),
         )
     )
@@ -127,6 +131,11 @@ def client_and_mocks(monkeypatch):
     mock_key_table.find_unique = AsyncMock(return_value=None)
     mock_key_table.update = AsyncMock(return_value=None)
 
+    mock_user_table = MagicMock()
+    mock_user_table.find_many = AsyncMock(return_value=[])
+    mock_user_table.find_unique = AsyncMock(return_value=None)
+    mock_user_table.update = AsyncMock(return_value=None)
+
     mock_mcp_server_table = MagicMock()
     mock_mcp_server_table.find_many = AsyncMock(return_value=[])
 
@@ -140,6 +149,7 @@ def client_and_mocks(monkeypatch):
             litellm_accessgrouptable=mock_access_group_table,
             litellm_teamtable=mock_team_table,
             litellm_verificationtoken=mock_key_table,
+            litellm_usertable=mock_user_table,
             litellm_agentstable=mock_agents_table,
         )
         yield tx
@@ -148,6 +158,7 @@ def client_and_mocks(monkeypatch):
         litellm_accessgrouptable=mock_access_group_table,
         litellm_teamtable=mock_team_table,
         litellm_verificationtoken=mock_key_table,
+        litellm_usertable=mock_user_table,
         litellm_mcpservertable=mock_mcp_server_table,
         litellm_agentstable=mock_agents_table,
         tx=mock_tx,
@@ -231,6 +242,23 @@ def test_create_access_group_duplicate_name_conflict(client_and_mocks):
     resp = client.post("/v1/access_group", json={"access_group_name": "existing-group"})
     assert resp.status_code == 409
     assert "already exists" in resp.json()["detail"]
+
+
+def test_create_access_group_syncs_assigned_users(client_and_mocks):
+    client, mock_prisma, mock_table, *_ = client_and_mocks
+    user_row = types.SimpleNamespace(user_id="user-1", access_group_ids=[], user_email="u@example.com", user_alias=None)
+    mock_prisma.db.litellm_usertable.find_many = AsyncMock(return_value=[user_row])
+    mock_prisma.db.litellm_usertable.find_unique = AsyncMock(return_value=user_row)
+
+    resp = client.post(
+        "/v1/access_group",
+        json={"access_group_name": "user-group", "assigned_user_ids": ["user-1"]},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["assigned_user_ids"] == ["user-1"]
+    mock_table.create.assert_awaited_once()
+    mock_prisma.db.litellm_usertable.update.assert_awaited()
+    assert mock_prisma.db.litellm_usertable.update.await_args.kwargs["data"]["access_group_ids"] == ["ag-new"]
 
 
 @pytest.mark.parametrize(

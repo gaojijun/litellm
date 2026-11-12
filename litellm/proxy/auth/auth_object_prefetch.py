@@ -47,7 +47,9 @@ def _lists_as_json(alias: str, columns: Sequence[str]) -> str:
     return ", ".join(f"'{column}', COALESCE(to_jsonb({alias}.{column}), '[]'::jsonb)" for column in columns)
 
 
-_USER_LISTS: Final = _lists_as_json("u", ("teams", "models", "allowed_cache_controls", "policies"))
+_USER_LISTS: Final = _lists_as_json(
+    "u", ("teams", "models", "allowed_cache_controls", "policies", "access_group_ids")
+)
 _TEAM_LISTS: Final = _lists_as_json(
     "t",
     (

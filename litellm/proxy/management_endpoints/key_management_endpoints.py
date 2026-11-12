@@ -5482,6 +5482,11 @@ async def generate_key_helper_fn(
             # Only when supplied: the SSO and default-key callers reach this with the
             # empty default, and writing that would clear an existing user's budgets.
             user_data["model_max_budget"] = model_max_budget_json
+        # User create puts access groups on the user row. The auto-created personal key
+        # must not inherit them, or key and user would share one list with two owners.
+        if request_type == "user":
+            user_data["access_group_ids"] = access_group_ids or []
+        key_access_group_ids: Final = [] if request_type == "user" else (access_group_ids or [])
         key_data: Final = {
             "token": token,
             "key_alias": key_alias,
@@ -5516,7 +5521,7 @@ async def generate_key_helper_fn(
             "key_type": key_type,
             "object_permission_id": object_permission_id,
             "router_settings": router_settings_json,
-            "access_group_ids": access_group_ids or [],
+            "access_group_ids": key_access_group_ids,
         }
 
         # Add rotation fields if auto_rotate is enabled
@@ -5608,7 +5613,7 @@ async def generate_key_helper_fn(
                     prisma_client=prisma_client,
                     key_token=created_token_hash,
                     previous_access_group_ids=None,
-                    updated_access_group_ids=access_group_ids,
+                    updated_access_group_ids=key_access_group_ids,
                 )
             key_data["litellm_budget_table"] = getattr(create_key_response, "litellm_budget_table", None)
             key_data["created_at"] = getattr(create_key_response, "created_at", None)

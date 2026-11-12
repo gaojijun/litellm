@@ -10097,6 +10097,7 @@ async def _get_team_object_for_access_groups(
 class _AccessGroupModels:
     team: tuple[str, ...] = ()
     key: tuple[str, ...] = ()
+    user: tuple[str, ...] = ()
 
 
 async def _get_access_group_models(
@@ -10109,6 +10110,7 @@ async def _get_access_group_models(
     from litellm.proxy.auth.auth_checks import (
         get_authorized_resources_from_key_access_groups,
         get_models_from_access_groups,
+        get_user_object,
     )
 
     team_group_models: Final = await get_models_from_access_groups(
@@ -10122,7 +10124,41 @@ async def _get_access_group_models(
         team_object=team_object,
         resource_field="access_model_names",
     )
-    return _AccessGroupModels(team=tuple(team_group_models), key=tuple(key_group_models))
+    # Personal keys (no team) list models from the user's attached access groups, matching
+    # can_user_call_model. Team-scoped keys keep using the team/key paths above.
+    if (
+        team_object is not None
+        or user_api_key_dict.team_id is not None
+        or user_api_key_dict.user_id is None
+        or prisma_client is None
+        or user_api_key_cache is None
+        or proxy_logging_obj is None
+    ):
+        return _AccessGroupModels(team=tuple(team_group_models), key=tuple(key_group_models))
+    try:
+        user_object: Final = await get_user_object(
+            user_id=user_api_key_dict.user_id,
+            prisma_client=prisma_client,
+            user_api_key_cache=user_api_key_cache,
+            user_id_upsert=False,
+            proxy_logging_obj=proxy_logging_obj,
+        )
+    except Exception:
+        return _AccessGroupModels(team=tuple(team_group_models), key=tuple(key_group_models))
+    if user_object is None or not user_object.access_group_ids:
+        return _AccessGroupModels(team=tuple(team_group_models), key=tuple(key_group_models))
+    return _AccessGroupModels(
+        team=tuple(team_group_models),
+        key=tuple(key_group_models),
+        user=tuple(
+            await get_models_from_access_groups(
+                access_group_ids=user_object.access_group_ids,
+                prisma_client=prisma_client,
+                user_api_key_cache=user_api_key_cache,
+                proxy_logging_obj=proxy_logging_obj,
+            )
+        ),
+    )
 
 
 async def _agent_access_group_visible_models(
@@ -10273,7 +10309,7 @@ async def get_available_models_for_user(
             user_api_key_cache=user_api_key_cache,
             proxy_logging_obj=proxy_logging_obj,
         )
-        if key_models or team_models
+        if key_models or team_models or (effective_team_id is None and user_api_key_dict.user_id is not None)
         else _AccessGroupModels()
     )
 
@@ -10285,9 +10321,10 @@ async def get_available_models_for_user(
         (
             *key_models,
             *access_group_models.key,
+            *access_group_models.user,
             *(access_group_models.team if key_model_check_skipped else ()),
         )
-        if key_models
+        if key_models or access_group_models.user
         else key_models
     )
     granted_team_models: Final = (

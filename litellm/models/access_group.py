@@ -22,6 +22,7 @@ class LiteLLM_AccessGroupTable(LiteLLMPydanticObjectBase):
     access_skill_names: tuple[str, ...] = ()
     assigned_team_ids: list[str] = []
     assigned_key_ids: list[str] = []
+    assigned_user_ids: list[str] = []
     created_at: datetime | None = None
     created_by: str | None = None
     updated_at: datetime | None = None
