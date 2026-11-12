@@ -35,10 +35,12 @@ from litellm.proxy.management_helpers.resource_display_names import (
     agent_display_names,
     key_display_names,
     mcp_server_display_names,
+    user_display_names,
 )
 from litellm.proxy.mcp_server.mcp_server_manager import global_mcp_server_manager
 from litellm.proxy.utils import PrismaClient, get_prisma_client_or_throw
 from litellm.repositories.table_repositories import AccessGroupRepository, TeamRepository
+from litellm.repositories.user_repository import UserRepository
 from litellm.types.access_group import (
     AccessGroupCreateRequest,
     AccessGroupResource,
@@ -73,6 +75,9 @@ class _AccessGroupRecord(Protocol):
     @property
     def assigned_key_ids(self) -> Sequence[str] | None: ...
 
+    @property
+    def assigned_user_ids(self) -> Sequence[str] | None: ...
+
     def dict(self) -> Mapping[str, object]: ...
 
 
@@ -90,6 +95,20 @@ class _TeamRecord(Protocol):
 class _KeyRecord(Protocol):
     @property
     def token(self) -> str: ...
+
+    @property
+    def access_group_ids(self) -> Sequence[str] | None: ...
+
+
+class _UserRecord(Protocol):
+    @property
+    def user_id(self) -> str: ...
+
+    @property
+    def user_email(self) -> str | None: ...
+
+    @property
+    def user_alias(self) -> str | None: ...
 
     @property
     def access_group_ids(self) -> Sequence[str] | None: ...
@@ -119,6 +138,14 @@ class _KeyTable(Protocol):
     async def find_unique(self, where: Mapping[str, object]) -> _KeyRecord | None: ...
 
     async def find_many(self, *, where: Mapping[str, object]) -> Sequence[_KeyRecord]: ...
+
+    async def update(self, *, where: Mapping[str, object], data: Mapping[str, object]) -> object: ...
+
+
+class _UserTable(Protocol):
+    async def find_unique(self, where: Mapping[str, object]) -> _UserRecord | None: ...
+
+    async def find_many(self, *, where: Mapping[str, object]) -> Sequence[_UserRecord]: ...
 
     async def update(self, *, where: Mapping[str, object], data: Mapping[str, object]) -> object: ...
 
@@ -162,6 +189,9 @@ class _AccessGroupTx(Protocol):
 
     @property
     def litellm_verificationtoken(self) -> _KeyTable: ...
+
+    @property
+    def litellm_usertable(self) -> _UserTable: ...
 
     @property
     def litellm_agentstable(self) -> _AgentTable: ...
@@ -218,6 +248,7 @@ class _ResourceNames:
     agents: Mapping[str, str]
     teams: Mapping[str, str | None]
     keys: Mapping[str, str]
+    users: Mapping[str, str]
 
 
 def _label(ids: Sequence[str], names: Mapping[str, str | None]) -> tuple[AccessGroupResource, ...]:
@@ -225,16 +256,22 @@ def _label(ids: Sequence[str], names: Mapping[str, str | None]) -> tuple[AccessG
 
 
 def _record_to_response(
-    record: _AccessGroupRecord, *, assigned_team_ids: Sequence[str], names: _ResourceNames
+    record: _AccessGroupRecord,
+    *,
+    assigned_team_ids: Sequence[str],
+    assigned_user_ids: Sequence[str],
+    names: _ResourceNames,
 ) -> AccessGroupResponse:
     payload: Final = MappingProxyType(
         {
             **record.dict(),
             "assigned_team_ids": assigned_team_ids,
+            "assigned_user_ids": assigned_user_ids,
             "access_mcp_servers": _label(record.access_mcp_server_ids or (), names.mcp_servers),
             "access_agents": _label(record.access_agent_ids or (), names.agents),
             "assigned_teams": _label(assigned_team_ids, names.teams),
             "assigned_keys": _label(record.assigned_key_ids or (), names.keys),
+            "assigned_users": _label(assigned_user_ids, names.users),
         }
     )
     return AccessGroupResponse.model_validate(payload)
@@ -252,7 +289,8 @@ async def _responses_for(
     if not records:
         return ()
     teams: Final = await _teams_touching(TeamRepository(prisma_client).table, records)
-    mcp_servers, agents, keys = await asyncio.gather(
+    users: Final = await _users_touching(UserRepository(prisma_client).table, records)
+    mcp_servers, agents, keys, user_names = await asyncio.gather(
         mcp_server_display_names(
             prisma_client,
             _ids_across(records, lambda record: record.access_mcp_server_ids),
@@ -262,16 +300,24 @@ async def _responses_for(
             prisma_client, _ids_across(records, lambda record: record.access_agent_ids), global_agent_registry
         ),
         key_display_names(prisma_client, _ids_across(records, lambda record: record.assigned_key_ids)),
+        user_display_names(prisma_client, _ids_across(records, lambda record: record.assigned_user_ids)),
     )
     names: Final = _ResourceNames(
         mcp_servers=mcp_servers,
         agents=agents,
         teams=MappingProxyType({team.team_id: team.team_alias for team in teams}),
         keys=keys,
+        users=user_names,
     )
-    attached: Final = _attached_team_ids_by_group(records, teams)
+    attached_teams: Final = _attached_team_ids_by_group(records, teams)
+    attached_users: Final = _attached_user_ids_by_group(records, users)
     return tuple(
-        _record_to_response(record, assigned_team_ids=attached[record.access_group_id], names=names)
+        _record_to_response(
+            record,
+            assigned_team_ids=attached_teams[record.access_group_id],
+            assigned_user_ids=attached_users[record.access_group_id],
+            names=names,
+        )
         for record in records
     )
 
@@ -323,6 +369,40 @@ async def _require_teams_exist(tx: _AccessGroupTx, team_ids: Sequence[str]) -> N
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown team ids: {', '.join(sorted(missing))}",
         )
+
+
+async def _require_users_exist(tx: _AccessGroupTx, user_ids: Sequence[str]) -> None:
+    if not user_ids:
+        return
+    where: Final = {"user_id": {"in": user_ids}}
+    found: Final = await tx.litellm_usertable.find_many(where=where)
+    missing: Final = frozenset(user_ids) - frozenset(user.user_id for user in found)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown user ids: {', '.join(sorted(missing))}",
+        )
+
+
+def _attached_user_ids_by_group(
+    records: Sequence[_AccessGroupRecord], users: Sequence[_UserRecord]
+) -> Mapping[str, tuple[str, ...]]:
+    real_user_ids: Final = frozenset(user.user_id for user in users)
+
+    def attached(record: _AccessGroupRecord) -> tuple[str, ...]:
+        stored: Final = (user_id for user_id in (record.assigned_user_ids or ()) if user_id in real_user_ids)
+        carrying: Final = (user.user_id for user in users if record.access_group_id in (user.access_group_ids or ()))
+        return tuple(dict.fromkeys((*stored, *carrying)))
+
+    return MappingProxyType({record.access_group_id: attached(record) for record in records})
+
+
+async def _users_touching(user_table: _UserTable, records: Sequence[_AccessGroupRecord]) -> Sequence[_UserRecord]:
+    group_ids: Final = tuple(record.access_group_id for record in records)
+    stored_user_ids: Final = _ids_across(records, lambda record: record.assigned_user_ids)
+    carrying: Final = {"access_group_ids": {"hasSome": group_ids}}
+    listed: Final = {"user_id": {"in": stored_user_ids}}
+    return await user_table.find_many(where={"OR": (carrying, listed)})
 
 
 def _record_to_access_group_table(record: _AccessGroupRecord) -> LiteLLM_AccessGroupTable:
@@ -392,6 +472,27 @@ async def _sync_access_group_on_keys(
         elif token not in to_add and access_group_id in current:
             await tx.litellm_verificationtoken.update(
                 where={"token": token}, data={"access_group_ids": list(_without_access_group(current, access_group_id))}
+            )
+
+
+async def _sync_access_group_on_users(
+    tx: _AccessGroupTx, add: Sequence[str], remove: Sequence[str], access_group_id: str
+) -> None:
+    """Rows are locked in sorted user_id order, matching other multi-user writers."""
+    to_add: Final = frozenset(add)
+    for user_id in sorted(to_add | frozenset(remove)):
+        user = await tx.litellm_usertable.find_unique(where={"user_id": user_id})
+        if user is None:
+            continue
+        current = list(user.access_group_ids or [])
+        if user_id in to_add and access_group_id not in current:
+            await tx.litellm_usertable.update(
+                where={"user_id": user_id}, data={"access_group_ids": [*current, access_group_id]}
+            )
+        elif user_id not in to_add and access_group_id in current:
+            await tx.litellm_usertable.update(
+                where={"user_id": user_id},
+                data={"access_group_ids": list(_without_access_group(current, access_group_id))},
             )
 
 
@@ -539,6 +640,15 @@ async def _patch_key_caches_remove_access_group(
             )
 
 
+async def _evict_user_caches(user_ids: Sequence[str], user_api_key_cache) -> None:
+    """User auth serves the whole cached row. Evict rather than patch so the next read reloads access_group_ids."""
+    if not user_ids:
+        return
+    from litellm.proxy.common_utils.auth_cache_invalidation_pubsub import evict_and_broadcast
+
+    await evict_and_broadcast(cache_keys=tuple(dict.fromkeys(user_ids)), user_api_key_cache=user_api_key_cache)
+
+
 # ---------------------------------------------------------------------------
 # CRUD endpoints
 # ---------------------------------------------------------------------------
@@ -568,6 +678,7 @@ async def create_access_group(
                     detail=f"Access group '{data.access_group_name}' already exists",
                 )
             await _require_teams_exist(tx, data.assigned_team_ids or ())
+            await _require_users_exist(tx, data.assigned_user_ids or ())
 
             record: Final = await tx.litellm_accessgrouptable.create(
                 data={
@@ -580,14 +691,16 @@ async def create_access_group(
                     "access_skill_names": list(data.access_skill_names or ()),
                     "assigned_team_ids": data.assigned_team_ids or [],
                     "assigned_key_ids": data.assigned_key_ids or [],
+                    "assigned_user_ids": data.assigned_user_ids or [],
                     "created_by": user_api_key_dict.user_id,
                     "updated_by": user_api_key_dict.user_id,
                 }
             )
 
-            # Sync team and key tables to reference the new access group
+            # Sync team, key and user tables to reference the new access group
             await _sync_access_group_on_teams(tx, data.assigned_team_ids or [], (), record.access_group_id)
             await _sync_access_group_on_keys(tx, data.assigned_key_ids or [], (), record.access_group_id)
+            await _sync_access_group_on_users(tx, data.assigned_user_ids or [], (), record.access_group_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -614,6 +727,7 @@ async def create_access_group(
         user_api_key_cache,
         proxy_logging_obj,
     )
+    await _evict_user_caches(data.assigned_user_ids or [], user_api_key_cache)
 
     return await _response_for(prisma_client, record)
 
@@ -672,6 +786,7 @@ async def update_access_group(
         if field in (
             "assigned_team_ids",
             "assigned_key_ids",
+            "assigned_user_ids",
             "access_model_names",
             "access_mcp_server_ids",
             "access_agent_ids",
@@ -688,6 +803,8 @@ async def update_access_group(
     teams_to_remove: list[str] = []
     keys_to_add: list[str] = []
     keys_to_remove: list[str] = []
+    users_to_add: list[str] = []
+    users_to_remove: list[str] = []
 
     try:
         tx: _AccessGroupTx
@@ -701,21 +818,28 @@ async def update_access_group(
                     detail=f"Access group '{access_group_id}' not found",
                 )
             await _require_teams_exist(tx, data.assigned_team_ids or ())
+            await _require_users_exist(tx, data.assigned_user_ids or ())
 
             attached: Final = await _attached_team_ids_for(tx.litellm_teamtable, (existing,))
             old_team_ids: Final[set[str]] = set(attached[access_group_id])
             old_key_ids: Final[set[str]] = set(existing.assigned_key_ids or [])
+            old_user_ids: Final[set[str]] = set(existing.assigned_user_ids or [])
             new_team_ids: Final[set[str]] = (
                 set(data.assigned_team_ids or []) if "assigned_team_ids" in update_fields else old_team_ids
             )
             new_key_ids: Final[set[str]] = (
                 set(data.assigned_key_ids or []) if "assigned_key_ids" in update_fields else old_key_ids
             )
+            new_user_ids: Final[set[str]] = (
+                set(data.assigned_user_ids or []) if "assigned_user_ids" in update_fields else old_user_ids
+            )
 
             teams_to_add = list(new_team_ids - old_team_ids)
             teams_to_remove = list(old_team_ids - new_team_ids)
             keys_to_add = list(new_key_ids - old_key_ids)
             keys_to_remove = list(old_key_ids - new_key_ids)
+            users_to_add = list(new_user_ids - old_user_ids)
+            users_to_remove = list(old_user_ids - new_user_ids)
 
             record: Final = await tx.litellm_accessgrouptable.update(
                 where={"access_group_id": access_group_id},
@@ -724,6 +848,7 @@ async def update_access_group(
 
             await _sync_access_group_on_teams(tx, teams_to_add, teams_to_remove, access_group_id)
             await _sync_access_group_on_keys(tx, keys_to_add, keys_to_remove, access_group_id)
+            await _sync_access_group_on_users(tx, users_to_add, users_to_remove, access_group_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -746,6 +871,7 @@ async def update_access_group(
     )
     await _patch_key_caches_add_access_group(keys_to_add, access_group_id, user_api_key_cache, proxy_logging_obj)
     await _patch_key_caches_remove_access_group(keys_to_remove, access_group_id, user_api_key_cache, proxy_logging_obj)
+    await _evict_user_caches([*users_to_add, *users_to_remove], user_api_key_cache)
 
     return await _response_for(prisma_client, record)
 
@@ -764,6 +890,7 @@ async def delete_access_group(
     try:
         affected_team_ids: list[str] = []
         affected_key_tokens: list[str] = []
+        affected_user_ids: list[str] = []
 
         tx: _AccessGroupTx
         async with _access_group_transaction(prisma_client) as tx:
@@ -794,8 +921,17 @@ async def delete_access_group(
             )
             affected_key_tokens = list(all_affected_key_tokens)
 
+            users_with_group: Final = await tx.litellm_usertable.find_many(
+                where={"access_group_ids": {"hasSome": [access_group_id]}}
+            )
+            all_affected_user_ids: Final[set[str]] = {user.user_id for user in users_with_group} | set(
+                existing.assigned_user_ids or []
+            )
+            affected_user_ids = list(all_affected_user_ids)
+
             await _sync_access_group_on_teams(tx, (), affected_team_ids, access_group_id)
             await _sync_access_group_on_keys(tx, (), affected_key_tokens, access_group_id)
+            await _sync_access_group_on_users(tx, (), affected_user_ids, access_group_id)
 
             detached_agent_ids: Final = await _detach_access_group_from_agents(tx, access_group_id)
 
@@ -811,6 +947,7 @@ async def delete_access_group(
         await _patch_key_caches_remove_access_group(
             affected_key_tokens, access_group_id, user_api_key_cache, proxy_logging_obj
         )
+        await _evict_user_caches(affected_user_ids, user_api_key_cache)
 
     except HTTPException:
         raise

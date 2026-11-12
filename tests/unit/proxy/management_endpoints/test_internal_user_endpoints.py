@@ -2336,6 +2336,23 @@ def test_update_internal_user_params_keeps_original_max_budget_when_not_provided
     assert "user_alias" in non_default_values
 
 
+def test_update_internal_user_params_clears_access_group_ids() -> None:
+    cleared: Final = UpdateUserRequest(user_id="user-spruce", access_group_ids=[])
+    update: Final = _update_internal_user_params(data_json=cleared.model_dump(exclude_unset=True), data=cleared)
+    assert update == {"user_id": "user-spruce", "access_group_ids": []}
+
+    omitted: Final = UpdateUserRequest(user_id="user-spruce", user_alias="Spruce")
+    assert "access_group_ids" not in _update_internal_user_params(
+        data_json=omitted.model_dump(exclude_unset=True), data=omitted
+    )
+
+    set_groups: Final = UpdateUserRequest(user_id="user-spruce", access_group_ids=["ag-1"])
+    assert _update_internal_user_params(data_json=set_groups.model_dump(exclude_unset=True), data=set_groups) == {
+        "user_id": "user-spruce",
+        "access_group_ids": ["ag-1"],
+    }
+
+
 @pytest.mark.parametrize("cleared_budget", [{}, None], ids=["empty-map", "null"])
 def test_update_internal_user_params_clears_model_budget(cleared_budget: dict[str, object] | None) -> None:
     request: Final = UpdateUserRequest(user_id="user-spruce", model_max_budget=cleared_budget)

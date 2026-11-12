@@ -1295,6 +1295,51 @@ async def test_can_user_call_model_with_no_default_models():
 
 
 @pytest.mark.asyncio
+async def test_can_user_call_model_allows_access_group_models(monkeypatch):
+    from litellm.proxy.auth import auth_checks
+    from litellm.proxy.auth.auth_checks import can_user_call_model
+    from litellm.proxy._types import SpecialModelNames
+
+    async def _models_from_groups(**_kwargs):
+        return ["anthropic-claude"]
+
+    monkeypatch.setattr(auth_checks, "get_models_from_access_groups", _models_from_groups)
+
+    await can_user_call_model(
+        model="anthropic-claude",
+        llm_router=None,
+        user_object=LiteLLM_UserTable(
+            user_id="user-with-group",
+            models=[SpecialModelNames.no_default_models.value],
+            access_group_ids=["ag-1"],
+            user_email="user@example.com",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_can_user_call_model_falls_back_to_access_groups_when_native_models_deny(monkeypatch):
+    from litellm.proxy.auth import auth_checks
+    from litellm.proxy.auth.auth_checks import can_user_call_model
+
+    async def _models_from_groups(**_kwargs):
+        return ["claude-sonnet"]
+
+    monkeypatch.setattr(auth_checks, "get_models_from_access_groups", _models_from_groups)
+
+    await can_user_call_model(
+        model="claude-sonnet",
+        llm_router=None,
+        user_object=LiteLLM_UserTable(
+            user_id="user-with-group",
+            models=["gpt-4o"],
+            access_group_ids=["ag-1"],
+            user_email="user@example.com",
+        ),
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_fuzzy_user_object():
     from litellm.proxy.auth.auth_checks import _get_fuzzy_user_object
     from unittest.mock import AsyncMock, MagicMock

@@ -26,6 +26,7 @@ function mapResponseToAccessGroup(r: AccessGroupResponse): AccessGroup {
     skillNames: r.access_skill_names ?? [],
     keyIds: r.assigned_key_ids,
     teamIds: r.assigned_team_ids,
+    userIds: r.assigned_user_ids ?? [],
     createdAt: r.created_at,
     createdBy: r.created_by ?? "",
     updatedAt: r.updated_at,

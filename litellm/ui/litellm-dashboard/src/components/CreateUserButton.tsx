@@ -16,6 +16,7 @@ import { ChevronRight, CircleHelp, Info, UserPlus } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import AccessGroupSelector from "./common_components/AccessGroupSelector";
 import TeamDropdown from "./common_components/team_dropdown";
 import { getModelDisplayName } from "./key_team_helpers/fetch_available_models_team_key";
 import { toast } from "@/lib/toast";
@@ -67,6 +68,7 @@ interface CreateUserFormValues {
   metadata?: string;
   send_invite_email: boolean;
   models?: string[];
+  access_group_ids?: string[];
 }
 
 const EMBEDDED_DEFAULTS: CreateUserFormValues = {
@@ -97,7 +99,7 @@ const withoutCollapsedModels = (values: CreateUserFormValues, isPersonalKeyOpen:
   if (isPersonalKeyOpen) {
     return values;
   }
-  const { models, ...rest } = values;
+  const { models, access_group_ids, ...rest } = values;
   return rest;
 };
 
@@ -481,6 +483,25 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
                           value={value ?? []}
                           onValueChange={onChange}
                           placeholder={t("users.createUser.fields.modelsPlaceholder")}
+                        />
+                      )}
+                    </FormField>
+                    <FormField
+                      control={form.control}
+                      name="access_group_ids"
+                      className="mt-4"
+                      label={t("users.createUser.fields.accessGroups", { defaultValue: "Access Groups" })}
+                      description={t("users.createUser.fields.accessGroupsDescription", {
+                        defaultValue: "Unified access groups that grant this user models, MCP servers, agents, and skills.",
+                      })}
+                    >
+                      {({ value, onChange }) => (
+                        <AccessGroupSelector
+                          value={value}
+                          onChange={onChange}
+                          placeholder={t("users.createUser.fields.accessGroupsPlaceholder", {
+                            defaultValue: "Select access groups",
+                          })}
                         />
                       )}
                     </FormField>

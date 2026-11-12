@@ -1368,6 +1368,7 @@ async def common_checks(
                 llm_router=llm_router,
                 user_object=user_object,
                 key_model_aliases=key_model_aliases_for_auth_check(valid_token),
+                prisma_client=prisma_client,
             )
 
     if end_user_object is not None and end_user_object.models:
@@ -5286,6 +5287,7 @@ async def _check_agent_caller_model_access(
         llm_router=llm_router,
         user_object=caller_user,
         key_model_aliases=caller_key_model_aliases,
+        prisma_client=prisma_client,
     )
 
 
@@ -5818,9 +5820,10 @@ async def get_authorized_resources_from_key_access_groups(
     For each access_group_id on the key, fetch the LiteLLM_AccessGroupTable row
     and contribute its `resource_field` only if the group authorizes the caller
     as an owner — that is, the group's `assigned_team_ids` includes the key's
-    `team_id`, or the group's `assigned_key_ids` includes the key's token. This
-    preserves the team-as-owner boundary while still letting a group reach the
-    key without first being added to the team's `access_group_ids` list.
+    `team_id`, the group's `assigned_key_ids` includes the key's token, or the
+    group's `assigned_user_ids` includes the key's user. This preserves the
+    owner boundary while still letting a group reach the key without first being
+    added to the team's `access_group_ids` list.
     """
     if valid_token is None:
         return []
@@ -5837,6 +5840,7 @@ async def get_authorized_resources_from_key_access_groups(
 
     key_team_id: Final = valid_token.team_id or (team_object.team_id if team_object is not None else None)
     key_token: Final = valid_token.token
+    key_user_id: Final = valid_token.user_id
 
     authorized_resources: Final[list[str]] = []
     for ag_id in key_access_group_ids:
@@ -5858,7 +5862,8 @@ async def get_authorized_resources_from_key_access_groups(
             continue
         team_authorized = bool(key_team_id and key_team_id in (ag.assigned_team_ids or []))
         key_authorized = bool(key_token and key_token in (ag.assigned_key_ids or []))
-        if team_authorized or key_authorized or ag_id in valid_token.access_group_rule_grants:
+        user_authorized = bool(key_user_id and key_user_id in (ag.assigned_user_ids or []))
+        if team_authorized or key_authorized or user_authorized or ag_id in valid_token.access_group_rule_grants:
             authorized_resources.extend(getattr(ag, resource_field, []) or [])
 
     return list(set(authorized_resources))
@@ -5956,11 +5961,38 @@ async def can_user_call_model(
     llm_router: Router | None,
     user_object: LiteLLM_UserTable | None,
     key_model_aliases: Mapping[str, str] | None = None,
+    prisma_client: DatabaseClient | None = None,
 ) -> Literal[True]:
+    """
+    Returns True if the user can access a specific model.
+
+    1. First checks native user-level model permissions
+    2. If not allowed natively, falls back to access_group_ids on the user
+    """
     if user_object is None:
         return True
 
+    user_access_group_ids: Final = user_object.access_group_ids or []
+    models_from_groups: Final = (
+        list(
+            await get_models_from_access_groups(
+                access_group_ids=user_access_group_ids,
+                prisma_client=prisma_client,
+            )
+        )
+        if user_access_group_ids
+        else []
+    )
+
     if SpecialModelNames.no_default_models.value in user_object.models:
+        if models_from_groups:
+            return can_object_call_model(
+                model=model,
+                llm_router=llm_router,
+                models=models_from_groups,
+                key_model_aliases=key_model_aliases,
+                object_type="user",
+            )
         internal_message: Final = (
             f"User not allowed to access model. No default model access, only team models allowed. "
             f"Tried to access {model}"
@@ -5973,13 +6005,24 @@ async def can_user_call_model(
             code=status.HTTP_403_FORBIDDEN,
         )
 
-    return can_object_call_model(
-        model=model,
-        llm_router=llm_router,
-        models=user_object.models,
-        key_model_aliases=key_model_aliases,
-        object_type="user",
-    )
+    try:
+        return can_object_call_model(
+            model=model,
+            llm_router=llm_router,
+            models=user_object.models,
+            key_model_aliases=key_model_aliases,
+            object_type="user",
+        )
+    except ProxyException:
+        if models_from_groups:
+            return can_object_call_model(
+                model=model,
+                llm_router=llm_router,
+                models=list(dict.fromkeys([*user_object.models, *models_from_groups])),
+                key_model_aliases=key_model_aliases,
+                object_type="user",
+            )
+        raise
 
 
 def personal_key_team_model_access_applies(valid_token: UserAPIKeyAuth | None) -> bool:

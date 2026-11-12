@@ -40,6 +40,7 @@ class LiteLLM_UserTable(LiteLLMPydanticObjectBase):
     budget_reset_at: datetime | None = None
     allowed_cache_controls: list[str] = []
     policies: list[str] = []
+    access_group_ids: list[str] | None = None
     model_spend: dict | None = {}
     model_max_budget: dict | None = {}
     created_at: datetime | None = None
@@ -58,6 +59,8 @@ class LiteLLM_UserTable(LiteLLMPydanticObjectBase):
             values.update({"models": []})
         if values.get("teams") is None:
             values.update({"teams": []})
+        if values.get("access_group_ids") is None:
+            values.update({"access_group_ids": []})
         return values
 
     def is_over_budget(self) -> bool:

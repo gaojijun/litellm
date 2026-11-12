@@ -323,6 +323,7 @@ model LiteLLM_UserTable {
     budget_reset_at DateTime?
     allowed_cache_controls String[] @default([])
     policies         String[] @default([])
+    access_group_ids String[] @default([])
     model_spend      Json @default("{}")
     model_max_budget Json @default("{}")
     created_at      DateTime?               @default(now()) @map("created_at")
@@ -1633,6 +1634,7 @@ model LiteLLM_AccessGroupTable {
 
   assigned_team_ids         String[] @default([])
   assigned_key_ids          String[] @default([])
+  assigned_user_ids         String[] @default([])
 
   created_at         DateTime @default(now())
   created_by         String?

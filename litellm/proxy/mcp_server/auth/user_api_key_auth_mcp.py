@@ -3064,10 +3064,19 @@ class MCPRequestHandler:
         return groups.attached
 
     @staticmethod
-    def _group_authorizes_key(group: LiteLLM_AccessGroupTable, team_id: str | None, token: str | None) -> bool:
+    def _group_authorizes_key(
+        group: LiteLLM_AccessGroupTable,
+        team_id: str | None,
+        token: str | None,
+        user_id: str | None = None,
+    ) -> bool:
         """Mirror of ``get_authorized_resources_from_key_access_groups``: a group a key merely names
-        binds only when the group lists the key's team or the key itself as an owner."""
-        return bool(team_id and team_id in group.assigned_team_ids) or bool(token and token in group.assigned_key_ids)
+        binds only when the group lists the key's team, the key itself, or the key's user as an owner."""
+        return (
+            bool(team_id and team_id in group.assigned_team_ids)
+            or bool(token and token in group.assigned_key_ids)
+            or bool(user_id and user_id in (group.assigned_user_ids or []))
+        )
 
     @staticmethod
     def _loaded_group_tools_for_server(
@@ -3129,7 +3138,9 @@ class MCPRequestHandler:
         owned: Final = tuple(
             group
             for group in groups
-            if MCPRequestHandler._group_authorizes_key(group, user_api_key_auth.team_id, user_api_key_auth.token)
+            if MCPRequestHandler._group_authorizes_key(
+                group, user_api_key_auth.team_id, user_api_key_auth.token, user_api_key_auth.user_id
+            )
         )
         return KeyGroupTools(
             owned=MCPRequestHandler.access_group_tools_for_server(owned, server_id),

@@ -26259,6 +26259,8 @@ export interface components {
             assigned_key_ids?: string[] | null;
             /** Assigned Team Ids */
             assigned_team_ids?: string[] | null;
+            /** Assigned User Ids */
+            assigned_user_ids?: string[] | null;
             /** Description */
             description?: string | null;
             /** Mcp Tool Permissions */
@@ -26317,6 +26319,10 @@ export interface components {
             assigned_team_ids: string[];
             /** Assigned Teams */
             assigned_teams: components["schemas"]["AccessGroupResource"][];
+            /** Assigned User Ids */
+            assigned_user_ids: string[];
+            /** Assigned Users */
+            assigned_users: components["schemas"]["AccessGroupResource"][];
             /**
              * Created At
              * Format: date-time
@@ -26365,6 +26371,8 @@ export interface components {
             assigned_key_ids?: string[] | null;
             /** Assigned Team Ids */
             assigned_team_ids?: string[] | null;
+            /** Assigned User Ids */
+            assigned_user_ids?: string[] | null;
             /** Description */
             description?: string | null;
             /** Mcp Tool Permissions */

@@ -83,6 +83,10 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (  # noq
     prepare_metadata_fields,
     raise_on_logging_credential_change,
 )
+from litellm.proxy.management_helpers.access_group_user_sync import (
+    sync_user_access_group_membership,
+    sync_user_update_access_group_membership,
+)
 from litellm.proxy.management_helpers.bulk_user_deletion import delete_users_from_current_teams
 from litellm.proxy.management_helpers.object_permission_utils import (  # noqa: F401  # legacy module exports
     _set_object_permission,  # pyright: ignore[reportPrivateUsage,reportUnusedImport]  # backwards-compatible package export
@@ -513,6 +517,7 @@ async def new_user(
     - max_budget: Optional[float] - Specify max budget for a given user.
     - budget_duration: Optional[str] - Budget is reset at the end of specified duration. If not set, budget is never reset. You can set duration as seconds ("30s"), minutes ("30m"), hours ("30h"), days ("30d"), months ("1mo").
     - models: Optional[list] - Model_name's a user is allowed to call. (if empty, key is allowed to call all models). Set to ['no-default-models'] to block all model access. Restricting user to only team-based model access.
+    - access_group_ids: Optional[List[str]] - Unified access group IDs associated with the user. Grants models (and related resources) for personal keys. Example - ["access_group_1"].
     - tpm_limit: Optional[int] - Specify tpm limit for a given user (Tokens per minute)
     - rpm_limit: Optional[int] - Specify rpm limit for a given user (Requests per minute)
     - auto_create_key: bool - Default=True. Flag used for returning a key as part of the /user/new response
@@ -633,6 +638,8 @@ async def new_user(
         created_user_id: Final = cast(str | None, response.get("user_id", None))
         if created_user_id is not None:
             forget_missing_user(created_user_id)
+            if data.access_group_ids:
+                await sync_user_access_group_membership(prisma_client=prisma_client, user_id=created_user_id)
         # Admin UI Logic
         # Add User to Team and Organization
         # if team_id passed add this user to the team
@@ -1380,6 +1387,9 @@ def _update_internal_user_params(data_json: dict, data: UpdateUserRequest | Upda
                 except ValidationError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
                 non_default_values[k] = {} if v is None else v
+        elif k == "access_group_ids":
+            if k in fields_set:
+                non_default_values[k] = [] if v is None else v
         elif (
             v is not None
             and v
@@ -1717,6 +1727,14 @@ async def _update_single_user_helper(
             user_api_key_cache=user_api_key_cache,
         )
 
+        updated_user_id: Final = non_default_values.get("user_id")
+        if isinstance(updated_user_id, str):
+            await sync_user_update_access_group_membership(
+                prisma_client=prisma_client,
+                user_id=updated_user_id,
+                data=user_request,
+            )
+
         if "object_permission_id" in non_default_values:
             await _invalidate_cached_user_entitlement(
                 user_id=non_default_values.get("user_id"),
@@ -1788,6 +1806,7 @@ async def user_update(
         - max_budget: Optional[float] - Specify max budget for a given user.
         - budget_duration: Optional[str] - Budget is reset at the end of specified duration. If not set, budget is never reset. You can set duration as seconds ("30s"), minutes ("30m"), hours ("30h"), days ("30d"), months ("1mo").
         - models: Optional[list] - Model_name's a user is allowed to call. (if empty, key is allowed to call all models)
+        - access_group_ids: Optional[List[str]] - Unified access group IDs associated with the user. Grants models (and related resources) for personal keys. Example - ["access_group_1"].
         - tpm_limit: Optional[int] - Specify tpm limit for a given user (Tokens per minute)
         - rpm_limit: Optional[int] - Specify rpm limit for a given user (Requests per minute)
         - auto_create_key: bool - Default=True. Flag used for returning a key as part of the /user/new response
@@ -2678,6 +2697,8 @@ async def delete_user(
     )
     if isinstance(deleted_users, str):
         raise HTTPException(status_code=500, detail={"error": deleted_users})
+    for deleted_user_id in data.user_ids:
+        await sync_user_access_group_membership(prisma_client=prisma_client, user_id=deleted_user_id)
     return deleted_users
 
 

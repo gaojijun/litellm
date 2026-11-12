@@ -46,6 +46,7 @@ class NewUserRequest(GenerateRequestBase):
     sso_user_id: str | None = None
     organizations: list[str] | None = None
     password: str | None = None
+    access_group_ids: list[str] | None = None
 
     @field_validator("password")
     @classmethod
@@ -76,6 +77,7 @@ class UpdateUserRequestNoUserIDorEmail(GenerateRequestBase):  # shared with Bulk
         | None
     ) = None
     max_budget: float | None = None
+    access_group_ids: list[str] | None = None
 
 
 class UpdateUserRequest(UpdateUserRequestNoUserIDorEmail):

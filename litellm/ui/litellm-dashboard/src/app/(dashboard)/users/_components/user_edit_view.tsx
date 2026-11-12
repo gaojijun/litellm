@@ -3,6 +3,7 @@ import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { all_admin_roles } from "@/utils/roles";
+import AccessGroupSelector from "@/components/common_components/AccessGroupSelector";
 import BudgetDurationDropdown from "@/components/common_components/budget_duration_dropdown";
 import { ModelMaxBudget, ModelMaxBudgetField } from "@/components/key_team_helpers/ModelMaxBudgetEditor";
 import { modelMaxBudgetUpdate } from "@/components/key_team_helpers/modelMaxBudgetPayload";
@@ -64,6 +65,7 @@ const userEditShape = (t: TFunction) => ({
   user_alias: z.string().nullish(),
   user_role: z.string().nullish(),
   models: z.array(z.string()),
+  access_group_ids: z.array(z.string()).optional(),
   budget_duration: z.string().nullish(),
   metadata: z.string().nullish(),
   tpm_limit: rateLimitField(t),
@@ -116,6 +118,7 @@ const toFormValues = (
     user_alias: userData.user_info?.user_alias,
     user_role: userData.user_info?.user_role,
     models: userData.user_info?.models || [],
+    access_group_ids: userData.user_info?.access_group_ids || [],
     max_budget: isUnlimited ? "" : maxBudget,
     budget_duration: userData.user_info?.budget_duration,
     metadata: userData.user_info?.metadata ? JSON.stringify(userData.user_info.metadata, null, 2) : undefined,
@@ -290,6 +293,27 @@ export function UserEditView({
               />
             )}
           </FormField>
+
+          {all_admin_roles.includes(userRole || "") && (
+            <FormField
+              control={form.control}
+              name="access_group_ids"
+              label={t("users.editView.fields.accessGroups", { defaultValue: "Access Groups" })}
+              description={t("users.editView.fields.accessGroupsDescription", {
+                defaultValue: "Unified access groups that grant this user models, MCP servers, agents, and skills.",
+              })}
+            >
+              {({ value, onChange }) => (
+                <AccessGroupSelector
+                  value={value}
+                  onChange={onChange}
+                  placeholder={t("users.editView.fields.accessGroupsPlaceholder", {
+                    defaultValue: "Select access groups",
+                  })}
+                />
+              )}
+            </FormField>
+          )}
 
           <FormField
             control={form.control}
