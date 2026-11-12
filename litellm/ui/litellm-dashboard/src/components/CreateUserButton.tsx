@@ -28,6 +28,12 @@ import {
   userCreateCall,
 } from "./networking";
 import OnboardingModal, { InvitationLink } from "./onboarding_link";
+import {
+  buildCreatePayload,
+  type CreateUserFormValues,
+  parseOptionalRateLimit,
+  withoutCollapsedModels,
+} from "./createUserPayload";
 
 // Helper function to generate UUID compatible across all environments
 const generateUUID = (): string => {
@@ -58,19 +64,6 @@ interface UISettings {
   SSO_ENABLED: boolean;
 }
 
-interface CreateUserFormValues {
-  supply_user_id: boolean;
-  user_id?: string;
-  user_email?: string;
-  user_role: string;
-  team_id?: string | null;
-  organization_ids?: string[];
-  metadata?: string;
-  send_invite_email: boolean;
-  models?: string[];
-  access_group_ids?: string[];
-}
-
 const EMBEDDED_DEFAULTS: CreateUserFormValues = {
   supply_user_id: false,
   user_id: "",
@@ -79,6 +72,8 @@ const EMBEDDED_DEFAULTS: CreateUserFormValues = {
   team_id: undefined,
   metadata: undefined,
   send_invite_email: true,
+  tpm_limit: "",
+  rpm_limit: "",
 };
 
 const STANDALONE_DEFAULTS: CreateUserFormValues = {
@@ -90,31 +85,8 @@ const STANDALONE_DEFAULTS: CreateUserFormValues = {
   organization_ids: undefined,
   metadata: undefined,
   send_invite_email: true,
-};
-
-// antd reported only mounted fields, so a collapsed Personal Key Creation
-// section left `models` out of the request entirely even after the admin had
-// picked some and closed it again.
-const withoutCollapsedModels = (values: CreateUserFormValues, isPersonalKeyOpen: boolean): CreateUserFormValues => {
-  if (isPersonalKeyOpen) {
-    return values;
-  }
-  const { models, access_group_ids, ...rest } = values;
-  return rest;
-};
-
-const buildCreatePayload = (values: CreateUserFormValues) => {
-  const { supply_user_id, user_id, ...fields } = values;
-  const apiValues = supply_user_id ? { ...fields, user_id: user_id?.trim() } : fields;
-  const withModels =
-    (!values.models || values.models.length === 0) && values.user_role !== "proxy_admin"
-      ? { ...apiValues, models: ["no-default-models"] }
-      : apiValues;
-  if (!withModels.organization_ids) {
-    return withModels;
-  }
-  const { organization_ids, ...rest } = withModels;
-  return { ...rest, organizations: organization_ids };
+  tpm_limit: "",
+  rpm_limit: "",
 };
 
 const SSO_INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -229,8 +201,21 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
       if (!isEmbedded) {
         setIsModalVisible(true);
       }
-      const payload = buildCreatePayload(withoutCollapsedModels(formValues, isPersonalKeyOpen));
-      const response = await userCreateCall(accessToken, null, payload);
+      const tpmLimit = parseOptionalRateLimit(formValues.tpm_limit);
+      const rpmLimit = parseOptionalRateLimit(formValues.rpm_limit);
+      if (!tpmLimit.ok) {
+        form.setError("tpm_limit", { message: t("users.editView.errors.rateLimit") }, { shouldFocus: true });
+        return;
+      }
+      if (!rpmLimit.ok) {
+        form.setError("rpm_limit", { message: t("users.editView.errors.rateLimit") }, { shouldFocus: true });
+        return;
+      }
+      const built = buildCreatePayload(withoutCollapsedModels(formValues, isPersonalKeyOpen));
+      if (!built.ok) {
+        return;
+      }
+      const response = await userCreateCall(accessToken, null, built.payload);
       await queryClient.invalidateQueries({ queryKey: ["userList"] });
       setApiuser(true);
       const user_id = response.data?.user_id || response.user_id;
@@ -345,6 +330,50 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
     </FormField>
   );
 
+  const tpmLimitField = (
+    <FormField
+      control={form.control}
+      name="tpm_limit"
+      label={labelWithHint(t("users.createUser.fields.tpmLimit"), t("users.createUser.fields.rateLimitHint"))}
+    >
+      {({ ref, value, onChange, ...control }) => (
+        <Input
+          {...control}
+          ref={ref}
+          type="number"
+          min={0}
+          step={1}
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+          onWheel={(event) => event.currentTarget.blur()}
+          placeholder={t("users.createUser.fields.rateLimitPlaceholder")}
+        />
+      )}
+    </FormField>
+  );
+
+  const rpmLimitField = (
+    <FormField
+      control={form.control}
+      name="rpm_limit"
+      label={labelWithHint(t("users.createUser.fields.rpmLimit"), t("users.createUser.fields.rateLimitHint"))}
+    >
+      {({ ref, value, onChange, ...control }) => (
+        <Input
+          {...control}
+          ref={ref}
+          type="number"
+          min={0}
+          step={1}
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+          onWheel={(event) => event.currentTarget.blur()}
+          placeholder={t("users.createUser.fields.rateLimitPlaceholder")}
+        />
+      )}
+    </FormField>
+  );
+
   const roleField = (label: React.ReactNode) => (
     <FormField control={form.control} name="user_role" label={label}>
       {({ id, value, onChange }) => (
@@ -380,6 +409,8 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
             {userIdField}
             {roleField(t("users.createUser.fields.userRole"))}
             {teamField}
+            {tpmLimitField}
+            {rpmLimitField}
             {metadataField}
             {sendInviteEmailField}
           </FieldGroup>
@@ -452,6 +483,8 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
                   )}
                 </FormField>
 
+                {tpmLimitField}
+                {rpmLimitField}
                 {metadataField}
                 {sendInviteEmailField}
 

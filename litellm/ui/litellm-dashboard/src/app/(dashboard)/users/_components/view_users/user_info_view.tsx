@@ -617,6 +617,20 @@ export default function UserInfoView({
                 )}
               </div>
             </Card>
+
+            <Card className="block p-6">
+              <p>{t("users.userInfo.overview.rateLimits")}</p>
+              <div className="mt-2 space-y-1">
+                <p>
+                  {t("users.userInfo.overview.tpm")}
+                  {userData.tpm_limit != null ? formatNumberWithCommas(userData.tpm_limit) : unlimitedLabel}
+                </p>
+                <p>
+                  {t("users.userInfo.overview.rpm")}
+                  {userData.rpm_limit != null ? formatNumberWithCommas(userData.rpm_limit) : unlimitedLabel}
+                </p>
+              </div>
+            </Card>
           </div>
         </TabsContent>
 
@@ -717,6 +731,16 @@ export default function UserInfoView({
                 <div>
                   <p className="font-medium">{t("users.userInfo.details.budgetReset")}</p>
                   <p>{getBudgetDurationLabel(userData.budget_duration ?? null)}</p>
+                </div>
+
+                <div>
+                  <p className="font-medium">{t("users.userInfo.details.tpmLimit")}</p>
+                  <p>{userData.tpm_limit != null ? formatNumberWithCommas(userData.tpm_limit) : unlimitedLabel}</p>
+                </div>
+
+                <div>
+                  <p className="font-medium">{t("users.userInfo.details.rpmLimit")}</p>
+                  <p>{userData.rpm_limit != null ? formatNumberWithCommas(userData.rpm_limit) : unlimitedLabel}</p>
                 </div>
 
                 <div>

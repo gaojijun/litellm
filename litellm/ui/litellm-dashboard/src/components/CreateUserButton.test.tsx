@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -751,6 +751,50 @@ describe("CreateUserButton", () => {
         expect(mockUserCreateCall).toHaveBeenCalled();
       });
       expect(submittedPayload().models).toEqual(["no-default-models"]);
+    });
+
+    it("should send TPM and RPM when the create form sets them", async () => {
+      const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
+      mockUserCreateCall.mockResolvedValue({ data: { user_id: "rate-limited-user" } });
+
+      renderWithProviders(<CreateUserButton {...defaultProps} possibleUIRoles={ROLES} isEmbedded />);
+
+      await user.type(screen.getByLabelText(/user email/i), "limits@example.com");
+      await user.click(screen.getByRole("combobox", { name: /user role/i }));
+      await user.click(screen.getByText("User"));
+      fireEvent.change(screen.getByRole("spinbutton", { name: /tpm limit/i }), {
+        target: { value: "100000" },
+      });
+      fireEvent.change(screen.getByRole("spinbutton", { name: /rpm limit/i }), {
+        target: { value: "50" },
+      });
+      await user.click(screen.getByRole("button", { name: /create user/i }));
+
+      await waitFor(() => {
+        expect(mockUserCreateCall).toHaveBeenCalled();
+      });
+      expect(submittedPayload()).toMatchObject({
+        tpm_limit: 100000,
+        rpm_limit: 50,
+      });
+    });
+
+    it("should omit TPM and RPM when left blank", async () => {
+      const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
+      mockUserCreateCall.mockResolvedValue({ data: { user_id: "unlimited-user" } });
+
+      renderWithProviders(<CreateUserButton {...defaultProps} possibleUIRoles={ROLES} isEmbedded />);
+
+      await user.type(screen.getByLabelText(/user email/i), "unlimited@example.com");
+      await user.click(screen.getByRole("combobox", { name: /user role/i }));
+      await user.click(screen.getByText("User"));
+      await user.click(screen.getByRole("button", { name: /create user/i }));
+
+      await waitFor(() => {
+        expect(mockUserCreateCall).toHaveBeenCalled();
+      });
+      expect(submittedPayload()).not.toHaveProperty("tpm_limit");
+      expect(submittedPayload()).not.toHaveProperty("rpm_limit");
     });
   });
 });

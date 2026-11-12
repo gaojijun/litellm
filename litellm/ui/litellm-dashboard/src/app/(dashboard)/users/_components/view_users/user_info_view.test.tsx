@@ -181,6 +181,50 @@ describe("UserInfoView", () => {
     expect(screen.getByText(/of \$3,000,000\.00/)).toBeInTheDocument();
   });
 
+  it("shows TPM and RPM on the overview card", async () => {
+    mockUserGetInfoV2.mockResolvedValue({
+      ...MOCK_USER_DATA,
+      tpm_limit: 100000,
+      rpm_limit: 50,
+    });
+
+    render(<UserInfoView {...defaultProps} />);
+
+    expect(await screen.findByText("Rate Limits")).toBeInTheDocument();
+    expect(screen.getByText(/TPM:\s*100,000/)).toBeInTheDocument();
+    expect(screen.getByText(/RPM:\s*50/)).toBeInTheDocument();
+  });
+
+  it("shows Unlimited when TPM and RPM are unset on overview", async () => {
+    mockUserGetInfoV2.mockResolvedValue({
+      ...MOCK_USER_DATA,
+      tpm_limit: null,
+      rpm_limit: null,
+    });
+
+    render(<UserInfoView {...defaultProps} />);
+
+    expect(await screen.findByText("Rate Limits")).toBeInTheDocument();
+    const rateLimitsCard = screen.getByText("Rate Limits").closest("div");
+    expect(rateLimitsCard).toHaveTextContent("TPM: Unlimited");
+    expect(rateLimitsCard).toHaveTextContent("RPM: Unlimited");
+  });
+
+  it("shows TPM and RPM in the read-only details tab", async () => {
+    mockUserGetInfoV2.mockResolvedValue({
+      ...MOCK_USER_DATA,
+      tpm_limit: 2500,
+      rpm_limit: 10,
+    });
+
+    render(<UserInfoView {...defaultProps} initialTab={1} />);
+
+    expect(await screen.findByText("TPM Limit")).toBeInTheDocument();
+    expect(screen.getByText("2,500")).toBeInTheDocument();
+    expect(screen.getByText("RPM Limit")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+  });
+
   it("should render teams in a table with team names", async () => {
     render(<UserInfoView {...defaultProps} />);
 
