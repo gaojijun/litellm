@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cva.config";
 import { usageHrefForUser } from "@/app/(dashboard)/usage/_components/usageUrlState";
-import { copyToClipboard } from "@/utils/dataUtils";
+import { copyToClipboard, formatNumberWithCommas } from "@/utils/dataUtils";
 
 function isScimInactive(user: UserInfo): boolean {
   return (user.metadata as Record<string, unknown> | null | undefined)?.scim_active === false;
@@ -210,6 +210,33 @@ export const getUsersTableColumns = ({
       enableSorting: true,
       cell: ({ row }) => (
         <MoneyCell value={row.original.max_budget} decimals={2} emptyText={t("users.table.unlimitedBudget")} showZero />
+      ),
+    },
+    {
+      id: "rate_limits",
+      meta: { title: t("users.table.columns.rateLimits"), skeleton: "twoLine" },
+      header: () => <span>{t("users.table.columns.rateLimits")}</span>,
+      size: 140,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="text-xs leading-tight">
+          <div>
+            <span className="text-[10px] font-semibold text-muted-foreground">{t("users.table.columns.tpm")} </span>
+            <span className="tabular-nums">
+              {row.original.tpm_limit != null
+                ? formatNumberWithCommas(row.original.tpm_limit)
+                : t("users.table.unlimitedBudget")}
+            </span>
+          </div>
+          <div>
+            <span className="text-[10px] font-semibold text-muted-foreground">{t("users.table.columns.rpm")} </span>
+            <span className="tabular-nums">
+              {row.original.rpm_limit != null
+                ? formatNumberWithCommas(row.original.rpm_limit)
+                : t("users.table.unlimitedBudget")}
+            </span>
+          </div>
+        </div>
       ),
     },
     {

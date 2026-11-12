@@ -642,10 +642,11 @@ describe("UserEditView", () => {
       return onSubmit.mock.calls[0][0];
     };
 
-    it("should send exactly the ten keys an admin edit produces, with seeded types preserved", async () => {
+    it("should send exactly the eleven keys an admin edit produces, with seeded types preserved", async () => {
       const payload = await submittedPayload();
 
       expect(Object.keys(payload).sort()).toEqual([
+        "access_group_ids",
         "budget_duration",
         "max_budget",
         "mcp_servers_and_groups",
@@ -666,6 +667,7 @@ describe("UserEditView", () => {
         max_budget: 100.5,
         budget_duration: "30d",
         metadata: { key1: "value1", key2: "value2" },
+        access_group_ids: [],
         mcp_servers_and_groups: { servers: [], accessGroups: [], toolsets: [] },
         mcp_tool_permissions: {},
       };
@@ -677,6 +679,7 @@ describe("UserEditView", () => {
       const payload = await submittedPayload({ isBulkEdit: true });
 
       expect(Object.keys(payload).sort()).toEqual([
+        "access_group_ids",
         "budget_duration",
         "max_budget",
         "metadata",
@@ -690,6 +693,7 @@ describe("UserEditView", () => {
       const payload = await submittedPayload({ userRole: "user" });
 
       expect(Object.keys(payload).sort()).toEqual([
+        "access_group_ids",
         "budget_duration",
         "max_budget",
         "metadata",

@@ -117,6 +117,7 @@ describe("UsersTable", () => {
       "User Alias",
       "Spend (USD)",
       "Budget (USD)",
+      "Rate Limits",
       "SSO ID",
       "Virtual Keys",
       "Created At",
@@ -130,6 +131,23 @@ describe("UsersTable", () => {
     render(<Harness data={[makeUser({ spend: 98.854 })]} />);
 
     expect(screen.getByText("$98.85")).toBeInTheDocument();
+  });
+
+  it("renders TPM and RPM in the rate limits column", () => {
+    render(<Harness data={[makeUser({ tpm_limit: 100000, rpm_limit: 50 })]} />);
+
+    expect(screen.getByText("100,000")).toBeInTheDocument();
+    expect(screen.getByText("50")).toBeInTheDocument();
+  });
+
+  it("renders Unlimited when TPM and RPM are unset", () => {
+    render(<Harness data={[makeUser({ tpm_limit: null, rpm_limit: null })]} />);
+
+    const rateLimitsHeader = screen.getByText("Rate Limits");
+    const headerRow = rateLimitsHeader.closest("tr") ?? rateLimitsHeader.closest("[role='row']");
+    expect(headerRow).toBeTruthy();
+    const cells = screen.getAllByText("Unlimited");
+    expect(cells.length).toBeGreaterThanOrEqual(2);
   });
 
   it("exposes sorting for every data column", () => {

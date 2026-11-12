@@ -20166,7 +20166,11 @@
         "modelsDescription": "Models user has access to, outside of team scope.",
         "modelsPlaceholder": "Select models",
         "allProxyModels": "All Proxy Models",
-        "noDefaultModels": "No Default Models"
+        "noDefaultModels": "No Default Models",
+        "tpmLimit": "TPM Limit",
+        "rpmLimit": "RPM Limit",
+        "rateLimitHint": "Applies across all keys owned by this user. Team and key limits still apply as ceilings.",
+        "rateLimitPlaceholder": "Unlimited"
       },
       "createButton": "Create User",
       "submitButton": "Invite User",
@@ -20336,6 +20340,9 @@
         "userAlias": "User Alias",
         "spend": "Spend (USD)",
         "budget": "Budget (USD)",
+        "rateLimits": "Rate Limits",
+        "tpm": "TPM",
+        "rpm": "RPM",
         "ssoId": "SSO ID",
         "virtualKeys": "Virtual Keys",
         "createdAt": "Created At",
@@ -20420,7 +20427,10 @@
         "noTeams": "No teams",
         "moreTeams_one": "+{{count}} more",
         "moreTeams_other": "+{{count}} more",
-        "showLess": "Show Less"
+        "showLess": "Show Less",
+        "rateLimits": "Rate Limits",
+        "tpm": "TPM: ",
+        "rpm": "RPM: "
       },
       "details": {
         "title": "User Settings",
@@ -20433,6 +20443,8 @@
         "lastUpdated": "Last Updated",
         "maxBudget": "Max Budget",
         "budgetReset": "Budget Reset",
+        "tpmLimit": "TPM Limit",
+        "rpmLimit": "RPM Limit",
         "metadata": "Metadata",
         "mcpPermissions": "MCP Permissions",
         "notSet": "Not Set",
