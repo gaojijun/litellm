@@ -525,7 +525,8 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
                       className="mt-4"
                       label={t("users.createUser.fields.accessGroups", { defaultValue: "Access Groups" })}
                       description={t("users.createUser.fields.accessGroupsDescription", {
-                        defaultValue: "Unified access groups that grant this user models, MCP servers, agents, and skills.",
+                        defaultValue:
+                          "Unified access groups that grant this user models, MCP servers, agents, and skills.",
                       })}
                     >
                       {({ value, onChange }) => (

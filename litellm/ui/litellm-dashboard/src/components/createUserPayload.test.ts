@@ -94,19 +94,13 @@ describe("buildCreatePayload", () => {
 
 describe("withoutCollapsedModels", () => {
   it("drops models and access groups when the personal key section is collapsed", () => {
-    const collapsed = withoutCollapsedModels(
-      { ...baseValues, models: ["gpt-4"], access_group_ids: ["ag-1"] },
-      false,
-    );
+    const collapsed = withoutCollapsedModels({ ...baseValues, models: ["gpt-4"], access_group_ids: ["ag-1"] }, false);
     expect(collapsed).not.toHaveProperty("models");
     expect(collapsed).not.toHaveProperty("access_group_ids");
   });
 
   it("keeps models and access groups when the personal key section is open", () => {
-    const open = withoutCollapsedModels(
-      { ...baseValues, models: ["gpt-4"], access_group_ids: ["ag-1"] },
-      true,
-    );
+    const open = withoutCollapsedModels({ ...baseValues, models: ["gpt-4"], access_group_ids: ["ag-1"] }, true);
     expect(open.models).toEqual(["gpt-4"]);
     expect(open.access_group_ids).toEqual(["ag-1"]);
   });
